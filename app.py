@@ -18,18 +18,35 @@ def load_data():
     # LIMPA NOMES DE COLUNAS
     df.columns = (
         df.columns
-        .str.strip()              # remove espaços
-        .str.replace("\n", " ")   # remove quebra de linha
-        .str.replace("  ", " ")   # remove espaços duplos
+        .str.strip()
+        .str.replace("\n", " ")
+        .str.replace(r"\s+", " ", regex=True)
+        .str.replace("(", "")
+        .str.replace(")", "")
+        .str.replace("/", "_")
     )
     return df
+
+
+    df.columns = [
+        "ImpressType", "Width", "Gramatura", "Supplier", "Currency",
+        "Price", "PaperBonus", "Lot", "TCO", "TCO_m2",
+        "PaymentTerms", "WorkingDays", "PV", "PV_m2", "LastUpdate"
+    ]
+
 
 df = load_data()
 
 # =============================
 # CLEAN
 # =============================
-df = df.dropna(subset=["Supplier", "TCO (R$/KG)"])
+df = df.rename(columns={
+    "Width (mm)": "Width",
+    "TCO (R$/KG)": "TCO",
+    "P.Value (R$/KG)": "PV"
+})
+
+df = df.dropna(subset=["Supplier", "TCO"])
 
 # =============================
 # SIDEBAR FILTERS
