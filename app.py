@@ -484,10 +484,6 @@ filtered = create_safe_multiselect(filtered, "Lot (ton)", "Lot (ton)", numeric_n
 if filtered.shape[0] == df.shapest.info("Selecione pelo menos um filtro para visualizar os dados.")
     st.stop()
 
-if filtered.empty:
-    st.warning("Nenhum registro encontrado com os filtros selecionados.")
-    st.stop()
-
 # =========================================================
 # KPI
 # =========================================================
