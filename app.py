@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# CONFIG
 st.set_page_config(page_title="Cockpit Papel", layout="wide")
 st.title("📊 Cockpit Papel - Dashboard Executivo")
 
+# =========================================
 # LOAD DATA
+# =========================================
 @st.cache_data
 def load_data():
     df = pd.read_excel("Cockpit_Papel.xlsm", sheet_name="Cockpit")
 
+    # limpeza robusta
     df.columns = (
         df.columns.astype(str)
         .str.strip()
@@ -22,32 +24,58 @@ def load_data():
 
 df = load_data()
 
-# =============================
-# DETECÇÃO AUTOMÁTICA
-# =============================
-def find_col(keyword):
-    cols = [c for c in df.columns if keyword.lower() in c.lower()]
-    return cols[0] if cols else None
+# =========================================
+# DEBUG (IMPORTANTE)
+# =========================================
+st.sidebar.write("🔍 Colunas detectadas:")
+st.sidebar.write(list(df.columns))
 
-col_supplier = find_col("Supplier")
-col_width = find_col("Width")
-col_gramatura = find_col("g/m2")
-col_tco = find_col("TCO")
-col_pv = find_col("P.Value")
+# =========================================
+# DETECÇÃO SEGURA
+# =========================================
+def safe_find(keyword):
+    for c in df.columns:
+        if keyword.lower() in c.lower():
+            return c
+    return None
 
-df = df.rename(columns={
-    col_supplier: "Supplier",
-    col_width: "Width",
-    col_gramatura: "Gramatura",
-    col_tco: "TCO",
-    col_pv: "PV"
-})
+col_supplier = safe_find("Supplier")
+col_width = safe_find("Width")
+col_gramatura = safe_find("g/m2")
+col_tco = safe_find("TCO")
+col_pv = safe_find("P.Value")
 
-df = df.dropna(subset=["Supplier", "TCO"])
+# =========================================
+# VALIDAÇÃO (IMPEDIR QUEBRA)
+# =========================================
+if col_supplier is None or col_tco is None:
+    st.error("❌ Não foi possível identificar as colunas principais.")
+    st.write("👉 Verifique os nomes exibidos na sidebar.")
+    st.stop()
 
-# =============================
-# FILTROS
-# =============================
+# =========================================
+# PADRONIZAÇÃO
+# =========================================
+rename_map = {}
+
+rename_map[col_supplier] = "Supplier"
+rename_map[col_tco] = "TCO"
+
+if col_width: rename_map[col_width] = "Width"
+if col_gramatura: rename_map[col_gramatura] = "Gramatura"
+if col_pv: rename_map[col_pv] = "PV"
+
+df = df.rename(columns=rename_map)
+
+# =========================================
+# FILTRO BASE
+# =========================================
+df = df[df["Supplier"].notna()]
+df = df[df["TCO"].notna()]
+
+# =========================================
+# SIDEBAR FILTROS
+# =========================================
 st.sidebar.header("🎯 Filtros")
 
 supplier_filter = st.sidebar.multiselect(
@@ -58,29 +86,33 @@ supplier_filter = st.sidebar.multiselect(
 
 df_f = df[df["Supplier"].isin(supplier_filter)]
 
-gramatura_filter = st.sidebar.multiselect(
-    "Gramatura",
-    sorted(df_f["Gramatura"].dropna().unique()),
-    default=sorted(df_f["Gramatura"].dropna().unique())
-)
+if "Gramatura" in df_f.columns:
+    gramatura_filter = st.sidebar.multiselect(
+        "Gramatura",
+        sorted(df_f["Gramatura"].dropna().unique()),
+        default=sorted(df_f["Gramatura"].dropna().unique())
+    )
+    df_f = df_f[df_f["Gramatura"].isin(gramatura_filter)]
 
-df_f = df_f[df_f["Gramatura"].isin(gramatura_filter)]
+if "Width" in df_f.columns:
+    width_filter = st.sidebar.multiselect(
+        "Width",
+        sorted(df_f["Width"].dropna().unique()),
+        default=sorted(df_f["Width"].dropna().unique())
+    )
+    df_f = df_f[df_f["Width"].isin(width_filter)]
 
-width_filter = st.sidebar.multiselect(
-    "Width",
-    sorted(df_f["Width"].dropna().unique()),
-    default=sorted(df_f["Width"].dropna().unique())
-)
-
-df_f = df_f[df_f["Width"].isin(width_filter)]
-
-# =============================
+# =========================================
 # KPIs
-# =============================
+# =========================================
 col1, col2, col3, col4 = st.columns(4)
 
 min_tco = df_f["TCO"].min()
-min_pv = df_f["PV"].min()
+
+if "PV" in df_f.columns:
+    min_pv = df_f["PV"].min()
+else:
+    min_pv = None
 
 best_row = df_f.loc[df_f["TCO"].idxmin()]
 best_supplier = best_row["Supplier"]
@@ -88,17 +120,23 @@ best_supplier = best_row["Supplier"]
 spread = ((df_f["TCO"].max() / min_tco) - 1) * 100
 
 col1.metric("💰 Melhor TCO", f"{min_tco:,.2f}")
-col2.metric("📉 Melhor PV", f"{min_pv:,.2f}")
+
+if min_pv:
+    col2.metric("📉 Melhor PV", f"{min_pv:,.2f}")
+else:
+    col2.metric("📉 PV", "N/A")
+
 col3.metric("🏆 Fornecedor", best_supplier)
 col4.metric("📊 Spread", f"{spread:.1f}%")
 
-# =============================
+# =========================================
 # GRÁFICOS
-# =============================
+# =========================================
 colA, colB = st.columns(2)
 
 with colA:
     st.subheader("TCO por fornecedor")
+
     df_chart = df_f.groupby("Supplier")["TCO"].mean().reset_index()
 
     fig = px.bar(df_chart, x="Supplier", y="TCO", color="TCO")
@@ -107,20 +145,21 @@ with colA:
 with colB:
     st.subheader("PV vs TCO")
 
-    fig2 = px.scatter(
-        df_f,
-        x="TCO",
-        y="PV",
-        color="Supplier",
-        size="Gramatura",
-        hover_data=["Width"],
-    )
+    if "PV" in df_f.columns:
+        fig2 = px.scatter(
+            df_f,
+            x="TCO",
+            y="PV",
+            color="Supplier",
+            hover_data=df_f.columns
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("PV não disponível")
 
-    st.plotly_chart(fig2, use_container_width=True)
-
-# =============================
+# =========================================
 # CURVA DE LOTE
-# =============================
+# =========================================
 if "Lot" in df_f.columns:
     st.subheader("Curva TCO vs Lote")
 
@@ -128,21 +167,20 @@ if "Lot" in df_f.columns:
         df_f,
         x="Lot",
         y="TCO",
-        color="Supplier",
-        trendline="ols"
+        color="Supplier"
     )
 
     st.plotly_chart(fig3, use_container_width=True)
 
-# =============================
+# =========================================
 # TABELA
-# =============================
+# =========================================
 st.subheader("Base filtrada")
 st.dataframe(df_f, use_container_width=True)
 
-# =============================
+# =========================================
 # INSIGHTS
-# =============================
+# =========================================
 st.subheader("Insights")
 
 st.markdown(f"""
