@@ -6,13 +6,13 @@ st.set_page_config(page_title="Cockpit Papel", layout="wide")
 st.title("📊 Cockpit Papel - Dashboard Executivo")
 
 # =========================================
-# LOAD DATA
+# LOAD BASE (CORRETO)
 # =========================================
 @st.cache_data
 def load_data():
-    df = pd.read_excel("Cockpit_Papel.xlsm", sheet_name="Cockpit")
+    df = pd.read_excel("Cockpit_Papel.xlsm", sheet_name="Preços e Condições")
 
-    # limpeza robusta
+    # limpeza
     df.columns = (
         df.columns.astype(str)
         .str.strip()
@@ -24,83 +24,84 @@ def load_data():
 
 df = load_data()
 
-# =========================================
-# DEBUG (IMPORTANTE)
-# =========================================
-st.sidebar.write("🔍 Colunas detectadas:")
-st.sidebar.write(list(df.columns))
+# DEBUG (opcional)
+st.sidebar.write("Colunas:", list(df.columns))
 
 # =========================================
-# DETECÇÃO SEGURA
+# NORMALIZA NOMES (ADAPTA AUTOMÁTICO)
 # =========================================
-def safe_find(keyword):
-    for c in df.columns:
-        if keyword.lower() in c.lower():
-            return c
+def find_col(possible_names):
+    for name in possible_names:
+        for c in df.columns:
+            if name.lower() in c.lower():
+                return c
     return None
 
-col_supplier = safe_find("Supplier")
-col_width = safe_find("Width")
-col_gramatura = safe_find("g/m2")
-col_tco = safe_find("TCO")
-col_pv = safe_find("P.Value")
+col_supplier = find_col(["supplier", "fornecedor"])
+col_price = find_col(["price", "preço"])
+col_width = find_col(["width", "largura"])
+col_gram = find_col(["g/m2", "gramatura"])
+col_currency = find_col(["currency", "moeda"])
+col_lot = find_col(["lot", "lote"])
 
 # =========================================
-# VALIDAÇÃO (IMPEDIR QUEBRA)
+# VALIDAÇÃO
 # =========================================
-if col_supplier is None or col_tco is None:
-    st.error("❌ Não foi possível identificar as colunas principais.")
-    st.write("👉 Verifique os nomes exibidos na sidebar.")
+if col_supplier is None or col_price is None:
+    st.error("❌ Não encontrei colunas essenciais (Supplier / Price)")
     st.stop()
 
-# =========================================
-# PADRONIZAÇÃO
-# =========================================
-rename_map = {}
-
-rename_map[col_supplier] = "Supplier"
-rename_map[col_tco] = "TCO"
+# rename padrão
+rename_map = {
+    col_supplier: "Supplier",
+    col_price: "Price"
+}
 
 if col_width: rename_map[col_width] = "Width"
-if col_gramatura: rename_map[col_gramatura] = "Gramatura"
-if col_pv: rename_map[col_pv] = "PV"
+if col_gram: rename_map[col_gram] = "Gramatura"
+if col_currency: rename_map[col_currency] = "Currency"
+if col_lot: rename_map[col_lot] = "Lot"
 
 df = df.rename(columns=rename_map)
 
 # =========================================
-# FILTRO BASE
+# ENGINEERING (AQUI É O SALTO DE QUALIDADE)
 # =========================================
-df = df[df["Supplier"].notna()]
-df = df[df["TCO"].notna()]
+
+# Exemplo simples de TCO (ajuste se tiver fórmula mais completa)
+df["TCO"] = df["Price"]
+
+# Se quiser sofisticar depois:
+# df["TCO"] = df["Price"] + freight + tax + etc
 
 # =========================================
-# SIDEBAR FILTROS
+# FILTROS INTELIGENTES
 # =========================================
 st.sidebar.header("🎯 Filtros")
 
-supplier_filter = st.sidebar.multiselect(
+supplier = st.sidebar.multiselect(
     "Fornecedor",
-    sorted(df["Supplier"].unique()),
-    default=sorted(df["Supplier"].unique())
+    sorted(df["Supplier"].dropna().unique()),
+    default=sorted(df["Supplier"].dropna().unique())
 )
 
-df_f = df[df["Supplier"].isin(supplier_filter)]
+df_f = df[df["Supplier"].isin(supplier)]
 
 if "Gramatura" in df_f.columns:
-    gramatura_filter = st.sidebar.multiselect(
+    gramatura = st.sidebar.multiselect(
         "Gramatura",
         sorted(df_f["Gramatura"].dropna().unique()),
         default=sorted(df_f["Gramatura"].dropna().unique())
     )
-    df_f = df_f[df_f["Gramatura"].isin(gramatura_filter)]
+    df_f = df_f[df_f["Gramatura"].isin(gramatura)]
 
 if "Width" in df_f.columns:
-    width_filter = st.sidebar.multiselect(
+    width = st.sidebar.multiselect(
         "Width",
         sorted(df_f["Width"].dropna().unique()),
         default=sorted(df_f["Width"].dropna().unique())
     )
-    df_f = df_f[df_f["Width"].isin(width_filter)]
+    df_f = df_f[df_f["Width"].isin(width)]
 
 # =========================================
 # KPIs
@@ -108,26 +109,20 @@ if "Width" in df_f.columns:
 col1, col2, col3, col4 = st.columns(4)
 
 min_tco = df_f["TCO"].min()
-
-if "PV" in df_f.columns:
-    min_pv = df_f["PV"].min()
-else:
-    min_pv = None
-
 best_row = df_f.loc[df_f["TCO"].idxmin()]
 best_supplier = best_row["Supplier"]
 
 spread = ((df_f["TCO"].max() / min_tco) - 1) * 100
 
 col1.metric("💰 Melhor TCO", f"{min_tco:,.2f}")
+col2.metric("🏆 Melhor fornecedor", best_supplier)
+col3.metric("📊 Spread", f"{spread:.1f}%")
+col4.metric("📦 Registros", len(df_f))
 
-if min_pv:
-    col2.metric("📉 Melhor PV", f"{min_pv:,.2f}")
-else:
-    col2.metric("📉 PV", "N/A")
-
-col3.metric("🏆 Fornecedor", best_supplier)
-col4.metric("📊 Spread", f"{spread:.1f}%")
+# =========================================
+# PIVOT (SUBSTITUI O EXCEL)
+# =========================================
+pivot = df_f.groupby("Supplier")["TCO"].mean().reset_index()
 
 # =========================================
 # GRÁFICOS
@@ -135,56 +130,45 @@ col4.metric("📊 Spread", f"{spread:.1f}%")
 colA, colB = st.columns(2)
 
 with colA:
-    st.subheader("TCO por fornecedor")
+    st.subheader("📊 TCO médio por fornecedor")
 
-    df_chart = df_f.groupby("Supplier")["TCO"].mean().reset_index()
+    fig = px.bar(
+        pivot,
+        x="Supplier",
+        y="TCO",
+        color="TCO",
+        text_auto=True
+    )
 
-    fig = px.bar(df_chart, x="Supplier", y="TCO", color="TCO")
     st.plotly_chart(fig, use_container_width=True)
 
 with colB:
-    st.subheader("PV vs TCO")
+    if "Lot" in df_f.columns:
+        st.subheader("📈 TCO vs Lote")
 
-    if "PV" in df_f.columns:
         fig2 = px.scatter(
             df_f,
-            x="TCO",
-            y="PV",
-            color="Supplier",
-            hover_data=df_f.columns
+            x="Lot",
+            y="TCO",
+            color="Supplier"
         )
+
         st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("PV não disponível")
-
-# =========================================
-# CURVA DE LOTE
-# =========================================
-if "Lot" in df_f.columns:
-    st.subheader("Curva TCO vs Lote")
-
-    fig3 = px.scatter(
-        df_f,
-        x="Lot",
-        y="TCO",
-        color="Supplier"
-    )
-
-    st.plotly_chart(fig3, use_container_width=True)
 
 # =========================================
 # TABELA
 # =========================================
-st.subheader("Base filtrada")
+st.subheader("📋 Base")
+
 st.dataframe(df_f, use_container_width=True)
 
 # =========================================
 # INSIGHTS
 # =========================================
-st.subheader("Insights")
+st.subheader("🧠 Insights")
 
 st.markdown(f"""
 - Melhor fornecedor: **{best_supplier}**
 - Melhor TCO: **{min_tco:,.2f}**
-- Spread: **{spread:.1f}%**
+- Diferença competitiva: **{spread:.1f}%**
 """)
