@@ -478,6 +478,12 @@ filtered = create_safe_multiselect(filtered, "Supplier", "Supplier", numeric_no_
 filtered = create_safe_multiselect(filtered, "Currency", "Currency", numeric_no_decimal=False)
 filtered = create_safe_multiselect(filtered, "Lot (ton)", "Lot (ton)", numeric_no_decimal=True)
 
+# -----------------------------------------
+# BLOQUEIO SEM FILTRO
+# -----------------------------------------
+if filtered.shape[0] == df.shapest.info("Selecione pelo menos um filtro para visualizar os dados.")
+    st.stop()
+
 if filtered.empty:
     st.warning("Nenhum registro encontrado com os filtros selecionados.")
     st.stop()
