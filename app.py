@@ -461,4 +461,3 @@ st.caption(
     "Observação: colunas históricas mensais foram ignoradas. "
     "Para comparação, o dashboard considera apenas 'Current Price' e os campos do modelo do cockpit."
 )
-``
