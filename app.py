@@ -12,7 +12,16 @@ st.title("📊 Cockpit Papel - Dashboard")
 # =============================
 @st.cache_data
 def load_data():
+    
     df = pd.read_excel("Cockpit_Papel.xlsm", sheet_name="Cockpit")
+
+    # LIMPA NOMES DE COLUNAS
+    df.columns = (
+        df.columns
+        .str.strip()              # remove espaços
+        .str.replace("\n", " ")   # remove quebra de linha
+        .str.replace("  ", " ")   # remove espaços duplos
+    )
     return df
 
 df = load_data()
