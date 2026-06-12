@@ -14,8 +14,8 @@ st.set_page_config(
     layout="wide"
 )
 
-EXCEL_FILE = "Cockpit_Papel.xlsm"          # ajuste se o nome do arquivo no GitHub for diferente
-SOURCE_SHEET = "Preços e Condições"        # base de dados
+EXCEL_FILE = "Cockpit_Papel.xlsm"          # ajuste apenas se o nome do arquivo estiver diferente
+SOURCE_SHEET = "Preços e Condições"        # ajuste apenas se o nome da aba estiver diferente
 APP_TITLE = "Cockpit Papel"
 
 # =========================================================
@@ -23,20 +23,20 @@ APP_TITLE = "Cockpit Papel"
 # =========================================================
 st.markdown("""
 <style>
-/* usa a área útil desde o topo */
+/* sobe conteúdo e usa melhor o espaço */
 .block-container {
-    padding-top: 0.35rem !important;
-    padding-bottom: 0.70rem !important;
+    padding-top: 0.30rem !important;
+    padding-bottom: 0.60rem !important;
     max-width: 100% !important;
 }
 
-/* título principal menor e mais compacto */
+/* título menor e compacto */
 .custom-title {
-    font-size: 1.45rem;
+    font-size: 1.35rem;
     font-weight: 700;
     margin-top: 0rem;
-    margin-bottom: 0.45rem;
-    line-height: 1.05;
+    margin-bottom: 0.40rem;
+    line-height: 1.02;
     color: #1F2937;
 }
 
@@ -49,20 +49,20 @@ st.markdown("""
     color: #1F2937;
 }
 
-/* cards KPI em estilo mais executivo */
+/* cards KPI */
 .kpi-card {
     background: linear-gradient(180deg, #FFFFFF 0%, #F7F9FC 100%);
     border: 1px solid #E5E7EB;
     border-radius: 14px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.04);
-    min-height: 82px;
+    min-height: 78px;
 }
 
 .kpi-label {
-    font-size: 0.73rem;
+    font-size: 0.72rem;
     color: #6B7280;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -70,30 +70,25 @@ st.markdown("""
 }
 
 .kpi-value {
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     color: #111827;
     font-weight: 700;
     line-height: 1.15;
     word-break: break-word;
 }
 
-.small-note {
-    font-size: 0.74rem;
-    color: #6B7280;
-}
-
-/* sidebar mais compacta */
+/* sidebar compacta */
 [data-testid="stSidebar"] .block-container {
-    padding-top: 0.80rem !important;
-    padding-bottom: 0.75rem !important;
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.65rem !important;
 }
 
-/* reduz espaço entre elementos */
+/* menos espaços internos */
 div[data-testid="stVerticalBlock"] > div {
-    gap: 0.40rem !important;
+    gap: 0.35rem !important;
 }
 
-/* botões download */
+/* botões preenchendo a largura */
 div[data-testid="stDownloadButton"] > button {
     width: 100%;
 }
@@ -117,12 +112,12 @@ def normalize_text(value):
 
 def parse_number(value):
     """
-    Converte:
+    Converte valores em formatos variados para float.
+    Exemplos:
     - 1.234,56
     - 1234,56
     - 1,234.56
     - R$ 1.234,56
-    para float
     """
     if pd.isna(value):
         return None
@@ -170,17 +165,15 @@ def series_to_numeric(series):
 
 
 def format_br_number(value, decimals=2):
-    """1.234,56"""
+    """Retorna no padrão brasileiro: 1.234,56"""
     if pd.isna(value):
         return ""
     try:
         n = float(value)
     except Exception:
         return str(value)
-
     s = f"{n:,.{decimals}f}"
-    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
-    return s
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def format_no_decimal(value):
@@ -188,15 +181,34 @@ def format_no_decimal(value):
     if pd.isna(value):
         return ""
     try:
-        f = float(value)
-        return str(int(round(f)))
+        return str(int(round(float(value))))
     except Exception:
         return str(value)
 
 
+def safe_display_string(value, numeric_no_decimal=False):
+    """
+    Converte qualquer valor para string segura para uso no multiselect.
+    Isso evita o erro de proto.options no Streamlit.
+    """
+    if pd.isna(value):
+        return ""
+
+    if numeric_no_decimal:
+        return format_no_decimal(value)
+
+    # datas
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return ""
+        return value.strftime("%d/%m/%Y")
+
+    return str(value)
+
+
 def detect_header_row(raw_df):
     """
-    Detecta a linha de cabeçalho real procurando campos-chave.
+    Procura a linha do cabeçalho real.
     """
     targets = ["impress type", "supplier", "current price"]
 
@@ -209,7 +221,6 @@ def detect_header_row(raw_df):
         row_text = " | ".join(row_values)
 
         score = sum(1 for t in targets if t in row_text)
-
         if score > best_score:
             best_score = score
             best_row = i
@@ -223,12 +234,10 @@ def find_column(columns, aliases):
     for alias in aliases:
         alias_norm = normalize_text(alias)
 
-        # match exato
         for col, col_norm in normalized_map.items():
             if col_norm == alias_norm:
                 return col
 
-        # match parcial
         for col, col_norm in normalized_map.items():
             if alias_norm in col_norm:
                 return col
@@ -284,7 +293,6 @@ def build_canonical_dataframe(df):
     existing_cols = [c for c in ordered_cols if c in df2.columns]
     df2 = df2[existing_cols].copy()
 
-    # conversão numérica robusta
     numeric_cols = [
         "Width (mm)",
         "g/m2",
@@ -302,7 +310,6 @@ def build_canonical_dataframe(df):
         if col in df2.columns:
             df2[col] = series_to_numeric(df2[col])
 
-    # data
     if "Última Atualização de Preço" in df2.columns:
         df2["Última Atualização de Preço"] = pd.to_datetime(
             df2["Última Atualização de Preço"],
@@ -323,7 +330,7 @@ def build_canonical_dataframe(df):
     if "P.Value (R$/M2)" not in df2.columns and {"P.Value (R$/KG)", "g/m2"}.issubset(df2.columns):
         df2["P.Value (R$/M2)"] = df2["P.Value (R$/KG)"] * (df2["g/m2"] / 1000.0)
 
-    # limpeza essencial
+    # limpeza mínima
     essential = []
     if "Impress Type" in df2.columns:
         essential.append("Impress Type")
@@ -345,31 +352,47 @@ def build_canonical_dataframe(df):
     return df2
 
 
-def multiselect_filter(df_in, column_name, label, format_func=None):
+def create_safe_multiselect(df_in, column_name, label, numeric_no_decimal=False):
     """
-    Filtro dependente em cascata.
+    Cria multiselect com opções seguras como string, evitando TypeError no Streamlit.
     """
     if column_name not in df_in.columns:
         return df_in
 
-    values = df_in[column_name].dropna().unique().tolist()
+    source = df_in[column_name].dropna().copy()
+    if source.empty:
+        return df_in
 
-    try:
-        values = sorted(values)
-    except Exception:
-        values = sorted(values, key=lambda x: str(x))
-
-    selected = st.sidebar.multiselect(
-        label,
-        options=values,
-        default=[],
-        format_func=format_func if format_func else (lambda x: x),
-        placeholder="Todos"
+    # Tabela de opções: original x texto exibido
+    opt_df = pd.DataFrame({"original": source})
+    opt_df["display"] = opt_df["original"].apply(
+        lambda x: safe_display_string(x, numeric_no_decimal=numeric_no_decimal)
     )
 
-    if selected:
-        return df_in[df_in[column_name].isin(selected)]
-    return df_in
+    # Remove duplicados de display preservando 1º original
+    opt_df = opt_df.drop_duplicates(subset=["display"], keep="first")
+
+    # Ordenação amigável
+    if numeric_no_decimal:
+        opt_df["sort_key"] = opt_df["original"].apply(lambda x: parse_number(x) if parse_number(x) is not None else 10**18)
+        opt_df = opt_df.sort_values(["sort_key", "display"], kind="stable")
+    else:
+        opt_df["sort_key"] = opt_df["display"].astype(str)
+        opt_df = opt_df.sort_values("sort_key", kind="stable")
+
+    display_options = opt_df["display"].tolist()
+
+    selected_display = st.sidebar.multiselect(
+        label,
+        options=display_options,
+        default=[]
+    )
+
+    if not selected_display:
+        return df_in
+
+    selected_original = opt_df.loc[opt_df["display"].isin(selected_display), "original"].tolist()
+    return df_in[df_in[column_name].isin(selected_original)]
 
 
 def safe_min(series):
@@ -408,7 +431,6 @@ def to_excel_bytes(df_export):
     output.seek(0)
     return output.getvalue()
 
-
 # =========================================================
 # LOAD
 # =========================================================
@@ -423,10 +445,8 @@ def load_data():
         )
 
     df = pd.read_excel(EXCEL_FILE, sheet_name=SOURCE_SHEET, header=header_row)
-
     df.columns = [str(c).strip().replace("\n", " ") for c in df.columns]
     df.columns = [re.sub(r"\s+", " ", c) for c in df.columns]
-
     df = df.dropna(how="all")
 
     return build_canonical_dataframe(df)
@@ -444,19 +464,19 @@ if df.empty:
     st.stop()
 
 # =========================================================
-# SIDEBAR = FILTROS APENAS
+# SIDEBAR = FILTROS
 # =========================================================
 st.sidebar.header("Filtros")
 
 filtered = df.copy()
 
-# Ordem dos slicers que você pediu
-filtered = multiselect_filter(filtered, "Impress Type", "Impress Type")
-filtered = multiselect_filter(filtered, "Width (mm)", "Width (mm)", format_func=format_no_decimal)
-filtered = multiselect_filter(filtered, "g/m2", "g/m2", format_func=format_no_decimal)
-filtered = multiselect_filter(filtered, "Supplier", "Supplier")
-filtered = multiselect_filter(filtered, "Currency", "Currency")
-filtered = multiselect_filter(filtered, "Lot (ton)", "Lot (ton)", format_func=format_no_decimal)
+# Ordem dos slicers
+filtered = create_safe_multiselect(filtered, "Impress Type", "Impress Type", numeric_no_decimal=False)
+filtered = create_safe_multiselect(filtered, "Width (mm)", "Width (mm)", numeric_no_decimal=True)
+filtered = create_safe_multiselect(filtered, "g/m2", "g/m2", numeric_no_decimal=True)
+filtered = create_safe_multiselect(filtered, "Supplier", "Supplier", numeric_no_decimal=False)
+filtered = create_safe_multiselect(filtered, "Currency", "Currency", numeric_no_decimal=False)
+filtered = create_safe_multiselect(filtered, "Lot (ton)", "Lot (ton)", numeric_no_decimal=True)
 
 if filtered.empty:
     st.warning("Nenhum registro encontrado com os filtros selecionados.")
@@ -526,13 +546,12 @@ display_cols = [
 display_cols = [c for c in display_cols if c in filtered.columns]
 table_df_raw = filtered[display_cols].copy()
 
-# renomeia cabeçalho para exibição/exportação
-rename_for_display = {
+# renomeia apenas para exibição/exportação
+table_df_raw = table_df_raw.rename(columns={
     "Última Atualização de Preço": "Último Preço"
-}
-table_df_raw = table_df_raw.rename(columns=rename_for_display)
+})
 
-# tabela formatada para tela/exportação
+# cópia formatada para exibir/exportar
 table_df_display = table_df_raw.copy()
 
 value_cols = [
@@ -565,7 +584,7 @@ if "Último Preço" in table_df_display.columns:
         errors="coerce"
     ).dt.strftime("%d/%m/%Y")
 
-# exportações
+# exportação
 exp1, exp2, exp3 = st.columns([1.2, 1.2, 6])
 
 with exp1:
@@ -588,7 +607,7 @@ with exp2:
         use_container_width=True
     )
 
-# centralização / alinhamento
+# alinhamento
 all_cols = list(table_df_display.columns)
 left_cols = [c for c in ["Supplier"] if c in table_df_display.columns]
 right_cols = [c for c in value_cols if c in table_df_display.columns]
@@ -596,9 +615,9 @@ center_cols = [c for c in all_cols if c not in left_cols + right_cols]
 
 styled_table = (
     table_df_display.style
-    .set_properties(**{"text-align": "center"}, subset=center_cols)
-    .set_properties(**{"text-align": "left"}, subset=left_cols)
-    .set_properties(**{"text-align": "right"}, subset=right_cols)
+    .set_properties(subset=center_cols, **{"text-align": "center"})
+    .set_properties(subset=left_cols, **{"text-align": "left"})
+    .set_properties(subset=right_cols, **{"text-align": "right"})
     .set_table_styles([
         {"selector": "th", "props": [("text-align", "center"), ("font-size", "12px")]},
         {"selector": "td", "props": [("font-size", "12px"), ("white-space", "nowrap")]},
@@ -681,6 +700,6 @@ else:
 # RODAPÉ
 # =========================================================
 st.caption(
-    "O dashboard considera a aba 'Preços e Condições' como base, usa apenas 'Current Price' "
-    "como preço principal e ignora colunas históricas mensais."
+    "O dashboard considera a aba 'Preços e Condições' como base, "
+    "usa apenas 'Current Price' como preço principal e ignora colunas históricas mensais."
 )
